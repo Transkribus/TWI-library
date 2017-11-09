@@ -11,6 +11,18 @@
     <div class="container">
 		<div class="col-lg-8">
 			<div class="container">
+				<!-- class please -->
+				<p style="font-size:14pt; color: black;">{{nrOfDocuments}} document{{nrOfDocuments|pluralize}}, {{nrOfWords}} word{{ nrOfWords|pluralize }}. </p>
+				<p style="font-size:12pt; color: black;">
+					 {%if personCount|add:placeCount|add:dateCount|add:abbrevCount|add:otherCount > 0 %}  {%trans "Tags"%} :{%endif%}
+					 {%if personCount %} {{personCount}} pe{{ personCount|pluralize:"rson,ople" }}, {%endif%}
+					 {%if placeCount %} {{placeCount}} place{{ placeCount|pluralize }}, {%endif%}
+					 {%if dateCount %} {{dateCount}} date{{ dateCount|pluralize }}, {%endif%}
+					 {%if abbrevCount %} {{abbrevCount}} abbreviation{{ personCount|pluralize }}, {%endif%}
+					 {%if otherCount %} {{otherCount}} other{{ otherCount|pluralize }} {%endif%}
+					 {%if personCount|add:placeCount|add:dateCount|add:abbrevCount|add:otherCount == 0 %}  {%trans "No tags"%} {%endif%}
+
+				</p>
 
 			  {% include "library/documents_table.html" %}
 

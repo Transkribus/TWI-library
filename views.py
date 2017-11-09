@@ -19,14 +19,15 @@ from django.core.urlresolvers import reverse
 from django.template.loader import render_to_string
 
 from apps.utils.decorators import t_login_required_ajax
-from apps.utils.utils import crop, t_metadata, t_log
+from apps.utils.utils import get_ts_session, crop, t_metadata, t_log
 from apps.utils.services import *
 from apps.utils.views import *
 
 #Imports from app (library)
 import settings
 import apps.library.settings
-from apps.navigation import navigation
+
+#from apps.navigation import navigation
 
 import apps.library.settings
 
@@ -35,17 +36,20 @@ import apps.library.settings
 def index(request):
     return render(request, 'library/homepage.html' )
 
-
 #/library
 #view that lists available collections for a user
 @login_required
 def collections(request):
-    t = request.user.tsdata.t
+    t = get_ts_session(request)
+    if isinstance(t,HttpResponse) :
+        return error_view(request,t)
 
     collections = t.collections(request,{'empty':'true'})
     if isinstance(collections,HttpResponse):
         return apps.utils.views.error_view(request,collections)
+
     return render(request, 'library/collections.html', {'collections': collections} )
+
 
 #/library/{colId}
 #view that
@@ -53,67 +57,63 @@ def collections(request):
 # - also lists pages for documents
 @login_required
 def collection(request, collId):
-    t = request.user.tsdata.t
+    t = get_ts_session(request)
+    if isinstance(t,HttpResponse) :
+        return error_view(request,t)
 
     #Avoid this sort of nonsense if possible
     collections = t.collections(request,{'end':None,'start':None,'empty':'true'})
     if isinstance(collections,HttpResponse):
         return apps.utils.views.error_view(request,collections)
 
-    navdata = navigation.get_nav(collections,collId,'colId','colName')
-    #if we didn't have a focus before navigation call, we'll have one after
-    collection = navdata.get("focus")
-
-    collIdParam = {'collId': collId}
-
-    personParam = {'collId': collId, 'tagName': 'person'}
-    placeParam = {'collId': collId, 'tagName': 'place'}
-    dateParam = {'collId': collId, 'tagName': 'date'}
-    abbrevParam = {'collId': collId, 'tagName': 'abbrev'}
-    otherParam = {'collId': collId, 'tagName': 'other'}
-    personCount = t.countCollTags(request,personParam)
+    # Get the collection metadata (from colections list)
+    collection = apps.utils.utils.collection_from_collections(collections, collId)
+    
+    # Get the number of tags for this collection for a variety of common tags:
+    # Person
+    personCount = t.countCollTags(request,{'collId': collId, 'tagName': 'person'})
     if isinstance(personCount,HttpResponse):
         return apps.utils.views.error_view(request,personCount)
-    placeCount = t.countCollTags(request,placeParam)
+    # Place
+    placeCount = t.countCollTags(request, {'collId': collId, 'tagName': 'place'})
     if isinstance(placeCount,HttpResponse):
         return apps.utils.views.error_view(request,placeCount)
-    dateCount = t.countCollTags(request,dateParam)
+    # Date
+    dateCount = t.countCollTags(request,{'collId': collId, 'tagName': 'date'})
     if isinstance(dateCount,HttpResponse):
         return apps.utils.views.error_view(request,dateCount)
-    abbrevCount = t.countCollTags(request,abbrevParam)
+    # Abbreviations
+    abbrevCount = t.countCollTags(request,{'collId': collId, 'tagName': 'abbrev'})
     if isinstance(abbrevCount,HttpResponse):
         return apps.utils.views.error_view(request,abbrevCount)
-    otherCount = t.countCollTags(request,otherParam)
+    # Other (?)
+    otherCount = t.countCollTags(request,{'collId': collId, 'tagName': 'other'})
     if isinstance(otherCount,HttpResponse):
         return apps.utils.views.error_view(request,otherCount)
 
-    tagsString = getTagsString(personCount, placeCount, dateCount, abbrevCount, otherCount)
-
-    print(tagsString)
-
-    collStat = t.collStat(request, collIdParam)
+    # Lastly lets get some stats on the number of Words in the collection
+    collStat = t.collStat(request, {'collId': collId})
     if isinstance(collStat,HttpResponse):
         return apps.utils.views.error_view(request,collStat)
 
-    if (collection):
-        print("print collection: " + str(collection))
-        collection['collStat'] = '%i words' % collStat.get('nrOfWords')
-        collection['tagsString'] = tagsString
-
-    print("print navdata: "+str(navdata))
-    pagedata = {'collection': collection}
-    #merge the dictionaries
-    combidata = pagedata.copy()
-    combidata.update(navdata)
-
-    return render(request, 'library/collection.html', combidata)
-
+    return render(request, 'library/collection.html', {
+					'collection' : collection,
+					'nrOfWords' : collStat.get('nrOfWords'),
+					'nrOfDocuments' : collection.get('nrOfDocuments'),
+					'personCount' : personCount,
+					'placeCount' : placeCount,
+					'dateCount' : dateCount,
+					'abbrevCount' : abbrevCount,
+					'otherCount' : otherCount,
+				})
 
 #/library/{colId}/{docId}
 # view that lists pages in doc and some doc level metadata
 @login_required
 def document(request, collId, docId, page=None):
-    t = request.user.tsdata.t
+    t = get_ts_session(request)
+    if isinstance(t,HttpResponse) :
+        return error_view(request,t)
 
     collection = t.collection(request, {'collId': collId})
     if isinstance(collection,HttpResponse):
@@ -122,9 +122,9 @@ def document(request, collId, docId, page=None):
     if isinstance(fulldoc,HttpResponse):
         return apps.utils.views.error_view(request,fulldoc)
 
-    nav = navigation.up_next_prev(request,"document",docId,collection,[collId])
+#    nav = navigation.up_next_prev(request,"document",docId,collection,[collId])
 
-    navdata = navigation.get_nav(collection,docId,'docId','title')
+#    navdata = navigation.get_nav(collection,docId,'docId','title')
     #if we didn't have a focus before navigation call, we'll have one after
     #document = navdata.get("focus")
     pagedata = {'document':  fulldoc}
@@ -134,7 +134,7 @@ def document(request, collId, docId, page=None):
 
     #merge the dictionaries
     combidata = pagedata.copy()
-    combidata.update(navdata)
+ #   combidata.update(navdata)
 
     return render(request, 'library/document.html', combidata)
 
@@ -145,7 +145,10 @@ def _get_collection(document, collId):
 
 
 def collection_metadata(request, collId):
-    t = request.user.tsdata.t
+    t = get_ts_session(request)
+    if isinstance(t,HttpResponse) :
+        return error_view(request,t)
+
     collections = t.collection(request, {'collId': collId})
     if isinstance(collections,HttpResponse):
         return apps.utils.views.error_view(request,collections)
@@ -209,7 +212,9 @@ def collection_metadata(request, collId):
 def document_metadata(request, collId, docId):
     import timeit
 
-    t = request.user.tsdata.t
+    t = get_ts_session(request)
+    if isinstance(t,HttpResponse) :
+        return error_view(request,t)
 
     #links direct to the various views of the document
     view_links = '<ul class="list-unstyled text-center twi-view-link-list">'
@@ -302,7 +307,9 @@ def document_metadata(request, collId, docId):
 
 @login_required
 def document_page(request, collId, docId, page=None):
-    t = request.user.tsdata.t
+    t = get_ts_session(request)
+    if isinstance(t,HttpResponse) :
+        return error_view(request,t)
 
     collection = t.collection(request, {'collId': collId})
     if isinstance(collection,HttpResponse):
@@ -323,12 +330,6 @@ def document_page(request, collId, docId, page=None):
     sys.stdout.write((str(request)).rsplit('/', 1)[0])
     sys.stdout.flush()
     startStr = (str(request)).rsplit('/', 1)[0]
-    #nav = navigation.up_next_prev(startStr,"document",docId,collection,[collId])
-
-    navdata = navigation.get_nav(collection,collId,'docId','title')
-#
-#     sys.stdout.write("pagedata url : %s \r\n" % pagedata["url"])
-#     sys.stdout.flush()
 
     #new for fetching all text regions and text of all pages
     textlines = []
@@ -389,9 +390,6 @@ def document_page(request, collId, docId, page=None):
         'docId': int(docId),
         'pageNr': page,
         'pagedata': pagedata
-#         'nav_up': nav['up'],
-#         'nav_next': nav['next'],
-#         'nav_prev': nav['prev'],
         })
 
 
@@ -400,7 +398,10 @@ def document_page(request, collId, docId, page=None):
 # view that lists transcripts in doc and some page level metadata
 @login_required
 def page(request, collId, docId, page):
-    t = request.user.tsdata.t
+    t = get_ts_session(request)
+    if isinstance(t,HttpResponse) :
+        return error_view(request,t)
+
     #call t_document with noOfTranscript=-1 which will return no transcript data
     full_doc = t.document(request, collId, docId, -1)
     if isinstance(full_doc,HttpResponse):
@@ -411,24 +412,15 @@ def page(request, collId, docId, page):
     pagedata = full_doc.get('pageList').get('pages')[index]
     transcripts = pagedata.get('tsList').get('transcripts')
 
-#    sys.stdout.write("############## PAGEDATA: %s\r\n" % ( pagedata ) )
-
     # the way xmltodict parses multiple instances of tags means that if there is one <transcripts> we get a dict,
     # if there is > 1 we get a list. Solution: put dict in list if dict (or get json from transkribus which is
     # parsed better, but not yet available)
     if isinstance(transcripts, dict):
         transcripts = [transcripts]
 
-#    sys.stdout.write("############## PAGEDATA.TRANSCRIPTS: %s\r\n" % ( transcripts ) )
-
-    nav = navigation.up_next_prev(request,"page",page,full_doc.get("pageList").get("pages"),[collId,docId])
-
     return render(request, 'library/page.html', {
         'pagedata': pagedata,
         'transcripts': transcripts,
-        'nav_up': nav['up'],
-        'nav_next': nav['next'],
-        'nav_prev': nav['prev'],
         'collId': collId,
         'docId': docId,
         })
@@ -437,14 +429,14 @@ def page(request, collId, docId, page):
 # view that lists regions in transcript and some transcript level metadata
 @login_required
 def transcript(request, collId, docId, page, transcriptId):
-    t = request.user.tsdata.t
+    t = get_ts_session(request)
+    if isinstance(t,HttpResponse) :
+        return error_view(request,t)
 
     #t_page returns an array of the transcripts for a page
     pagedata = t.page(request, collId, docId, page)
     if isinstance(pagedata,HttpResponse):
         return apps.utils.views.error_view(request,pagedata)
-
-    nav = navigation.up_next_prev(request,"transcript",transcriptId,pagedata,[collId,docId,page])
 
     pageXML_url = None;
     for x in pagedata:
@@ -474,10 +466,7 @@ def transcript(request, collId, docId, page, transcriptId):
     return render(request, 'library/transcript.html', {
                 'transcript' : transcript,
                 'regions' : regions,
-                'nav_up': nav['up'],
-                'nav_next': nav['next'],
-                'nav_prev': nav['prev'],
-                'collId': collId,
+               'collId': collId,
                 'docId': docId,
                 'pageId': page, #NB actually the number for now
                 })
@@ -487,7 +476,9 @@ def transcript(request, collId, docId, page, transcriptId):
 @login_required
 def region(request, collId, docId, page, transcriptId, regionId):
 
-    t = request.user.tsdata.t
+    t = get_ts_session(request)
+    if isinstance(t,HttpResponse) :
+        return error_view(request,t)
 
     # We need to be able to target a transcript (as mentioned elsewhere)
     # here there is no need for anything over than the pageXML really
@@ -536,11 +527,6 @@ def region(request, collId, docId, page, transcriptId, regionId):
     if(region.get("Coords")):
         region['crop'] = crop(region.get("Coords").get("@points"),True)
 
-    nav = navigation.up_next_prev(request,"region",regionId,regions,[collId,docId,page,transcriptId])
-
-#    sys.stdout.write("REGION: %s\r\n" % (region) )
-#    sys.stdout.flush()
-
     lines = region.get("TextLine")
     if isinstance(lines, dict):
         lines = [lines]
@@ -552,9 +538,6 @@ def region(request, collId, docId, page, transcriptId, regionId):
     return render(request, 'library/region.html', {
                 'region' : region,
                 'lines' : lines,
-                'nav_up': nav['up'],
-                'nav_next': nav['next'],
-                'nav_prev': nav['prev'],
                 'collId': collId,
                 'docId': docId,
                 'pageId': page, #NB actually the number for now
@@ -567,7 +550,10 @@ def region(request, collId, docId, page, transcriptId, regionId):
 # view that lists words in line and some line level metadata
 @login_required
 def line(request, collId, docId, page, transcriptId, regionId, lineId):
-    t = request.user.tsdata.t
+    t = get_ts_session(request)
+    if isinstance(t,HttpResponse) :
+        return error_view(request,t)
+
     # We need to be able to target a transcript (as mentioned elsewhere)
     # here there is no need for anything over than the pageXML really
     # we could get one transcript from ...{page}/curr, but for completeness would
@@ -619,12 +605,6 @@ def line(request, collId, docId, page, transcriptId, regionId, lineId):
     if(line.get("Coords")):
         line['crop'] = crop(line.get("Coords").get("@points"),True)
 
-
-    nav = navigation.up_next_prev(request,"line",lineId,lines,[collId,docId,page,transcriptId,regionId])
-
-#    sys.stdout.write("REGION: %s\r\n" % (region) )
-#    sys.stdout.flush()
-
     words = line.get("Word")
     if isinstance(words, dict):
         words = [words]
@@ -636,9 +616,6 @@ def line(request, collId, docId, page, transcriptId, regionId, lineId):
     return render(request, 'library/line.html', {
                 'line' : line,
                 'words' : words,
-                'nav_up': nav['up'],
-                'nav_next': nav['next'],
-                'nav_prev': nav['prev'],
                 'collId': collId,
                 'docId': docId,
                 'pageId': page, #NB actually the number for now
@@ -652,7 +629,10 @@ def line(request, collId, docId, page, transcriptId, regionId, lineId):
 # view that shows some word level metadata
 @login_required
 def word(request, collId, docId, page, transcriptId, regionId, lineId, wordId):
-    t = request.user.tsdata.t
+    t = get_ts_session(request)
+    if isinstance(t,HttpResponse) :
+        return error_view(request,t)
+
     # booo hiss
     transcripts = t.page(request, collId, docId, page)
     if isinstance(transcripts,HttpResponse):
@@ -700,7 +680,6 @@ def word(request, collId, docId, page, transcriptId, regionId, lineId, wordId):
     if isinstance(words, dict):
         words = [words]
 
-
     #parse metadata
     for x in words:
         x['key'] = x.get("@id")
@@ -711,13 +690,8 @@ def word(request, collId, docId, page, transcriptId, regionId, lineId, wordId):
     if(word.get("Coords")):
         word['crop'] = crop(word.get("Coords").get("@points"),True)
 
-    nav = navigation.up_next_prev(request,"word",wordId,words,[collId,docId,page,transcriptId,regionId,lineId])
-
     return render(request, 'library/word.html', {
                 'word' : word,
-                'nav_up': nav['up'],
-                'nav_next': nav['next'],
-                'nav_prev': nav['prev'],
                 'collId': collId,
                 'docId': docId,
                 'pageId': page, #NB actually the number for now
@@ -732,7 +706,9 @@ def word(request, collId, docId, page, transcriptId, regionId, lineId, wordId):
 # This may be as simple as isPublished(), rather than any analysis on the content
 @login_required
 def rand(request, collId, element):
-    t = request.user.tsdata.t
+    t = get_ts_session(request)
+    if isinstance(t,HttpResponse) :
+        return error_view(request,t)
 
     collection = t.collection(request, {'collId': collId})
 
@@ -850,20 +826,4 @@ def display_random(request,level,data, collection, doc, page):
 def users(request, collId, userId):
     return render(request, 'library/users.html')
 
-def getTagsString(personCount, placeCount, dateCount, abbrevCount, otherCount):
-    if (personCount>0) or (placeCount>0) or (dateCount>0) or (abbrevCount>0) or (otherCount>0):
-        tagsStringParts = []
-        if personCount > 0:
-            tagsStringParts += ['%i persons' % personCount]
-        if placeCount > 0:
-            tagsStringParts += ['%i places' % placeCount]
-        if dateCount > 0:
-            tagsStringParts += ['%i dates' % dateCount]
-        if abbrevCount > 0:
-            tagsStringParts += ['%i abbrevs ' % abbrevCount]
-        if otherCount > 0:
-            tagsStringParts += ['%i others' % otherCount]
 
-        return 'Tags: ' + ', '.join(tagsStringParts)
-    else:
-        return 'No Tags'
