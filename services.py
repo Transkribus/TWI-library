@@ -161,6 +161,9 @@ class LazyJsonClient:
         return self._build_list_with_count('GET', [
             '/collections/list', '/collections/count'], params)
 
+    def get_col_data(self, col_id, **kwargs):
+        return self._build_object('GET', '/collections/%s/' % col_id)
+
     def get_doc_list(self, col_id, sort_by=None):
         assert isinstance(col_id, int)
         params = {

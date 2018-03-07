@@ -2,6 +2,7 @@ import time
 
 from django.conf import settings
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.views.generic.detail import DetailView
 
 from . import services
 from . import forms
@@ -144,6 +145,30 @@ class DocumentListView(LoginRequiredMixin, ListView):
             'search': self.search,
             'form': self.form,
             'page': page,
+            'time_elapsed': round(1000 * (time.time() - then), 2)
+        })
+
+        return context
+
+
+class CollectionDetailsView(LoginRequiredMixin, DetailView):
+    template_name = 'library/collection/details.html'
+
+    def get_queryset(self):
+        return self._get_collection()
+
+    def _get_collection(self):
+        client = services.Helpers.create_client_from_request(self.request)
+        return client.get_col_data(self.kwargs['pk'])
+
+    def get_context_data(self, **kwargs):
+        then = time.time()
+
+        context = super(DetailView, self).get_context_data(**kwargs)
+        collection = self._get_collection()
+
+        context.update({
+            'name': collection['colName'],
             'time_elapsed': round(1000 * (time.time() - then), 2)
         })
 
