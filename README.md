@@ -1,3 +1,3 @@
-# TWI-mc deprecated in favour fo https://github.com/Transkribus/web-app
+# TWI-mc deprecated in favour of https://github.com/Transkribus/web-app
 
 # TWI-library
